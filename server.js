@@ -1,51 +1,69 @@
-import express from 'express';
-import fetch from 'node-fetch';
-import cors from 'cors';
-import dotenv from 'dotenv';
+import express from "express";
+import cors from "cors";
+import dotenv from "dotenv";
+import fetch from "node-fetch";
+import path from "path";
+import { fileURLToPath } from "url";
 
-dotenv.config(); // Load .env
+dotenv.config();
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 const app = express();
+const port = process.env.PORT || 3000;
+
 app.use(cors());
 app.use(express.json());
 
-const PORT = 3000;
+// ✅ Serve frontend files
+app.use(express.static(path.join(__dirname, "public")));
 
-app.post('/api/sentiment', async (req, res) => {
+// ✅ Sentiment API
+app.post("/api/sentiment", async (req, res) => {
   const { text } = req.body;
-
-  if (!text) return res.status(400).json({ error: "No text provided" });
-
-  if (!process.env.OPENAI_KEY) {
-    return res.status(500).json({ error: "OpenAI API key not found" });
-  }
 
   try {
     const response = await fetch("https://api.openai.com/v1/chat/completions", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        "Authorization": `Bearer ${process.env.OPENAI_KEY}`
+        Authorization: `Bearer ${process.env.OPENAI_KEY}`,
       },
       body: JSON.stringify({
-        model: "gpt-4o-mini",
+        model: "gpt-3.5-turbo",
         messages: [
-          { role: "system", content: "You are a sentiment analyzer. Respond with the mood (Positive 😀, Negative 😡, Neutral 😐) and a rating from 1 to 10. Format exactly like this: Mood (X/10)." },
-          { role: "user", content: text }
+          {
+            role: "system",
+            content:
+              "You are a sentiment analyzer. Reply ONLY with JSON like { mood: Positive|Negative|Neutral, score: 1-10 }.",
+          },
+          { role: "user", content: text },
         ],
-        max_tokens: 20
-      })
+      }),
     });
 
     const data = await response.json();
 
-    if (data.error) return res.status(500).json({ error: data.error.message });
+    if (data.error) {
+      return res.status(500).json({ error: data.error.message });
+    }
 
-    res.json(data);
+    const message = data.choices?.[0]?.message?.content || "{}";
+    const parsed = JSON.parse(message);
 
+    res.json(parsed);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    console.error(err);
+    res.status(500).json({ error: "Server error" });
   }
 });
 
-app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+// ✅ Fallback to frontend (index.html) for unknown routes
+app.get("*", (req, res) => {
+  res.sendFile(path.join(__dirname, "public", "index.html"));
+});
+
+app.listen(port, () => {
+  console.log(`🚀 Server running on http://localhost:${port}`);
+});
